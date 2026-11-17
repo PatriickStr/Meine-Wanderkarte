@@ -28,9 +28,9 @@ const road=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{att
 const shade=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}',{attribution:'Hillshade © Esri',opacity:.24,maxZoom:19});
 let base=sat,heatOn=false,shadeOn=true,tracksOn=true; sat.addTo(map);shade.addTo(map);
 const trackGroup=L.layerGroup().addTo(map),heatGroup=L.layerGroup(),individual=[],bounds=[];
-const colors=['#b9f3a8','#ffa754','#ff675d','#e5dc71','#78d8e5','#e4a4f1','#80e0a5'];
-routes.forEach((r,i)=>{const g=L.layerGroup();r.segments.forEach(s=>{const points=s.map(p=>[p[0],p[1]]);bounds.push(...points);L.polyline(points,{color:'#08150d',weight:6,opacity:.85,interactive:false}).addTo(g);L.polyline(points,{color:colors[i%colors.length],weight:3.5,opacity:.96}).on('click',()=>showTour(i)).bindTooltip(r.name).addTo(g)});g.addTo(trackGroup);individual.push(g)});
-DATA.heatlines.forEach(([level,pts])=>L.polyline(pts,{color:level>=3?'#fa554d':level===2?'#ff9b36':'#e4ee71',weight:level>=3?7:5,opacity:.9,interactive:false}).addTo(heatGroup));
+const colors=['#a4f0b2','#f5b66c','#ff8e84','#e9dc87','#8cd9e8','#d7afe7','#90d8b5'];
+routes.forEach((r,i)=>{const g=L.layerGroup();r.segments.forEach(s=>{const points=s.map(p=>[p[0],p[1]]);bounds.push(...points);L.polyline(points,{color:'#07140f',weight:2.7,opacity:.55,interactive:false}).addTo(g);L.polyline(points,{color:'#ffffff',weight:1.5,opacity:.85}).on('click',()=>showTour(i)).bindTooltip(r.name).addTo(g)});g.addTo(trackGroup);individual.push(g)});
+DATA.heatlines.forEach(([level,pts])=>L.polyline(pts,{color:level>=3?'#fa554d':level===2?'#ff9b36':'#e4ee71',weight:level>=3?3.2:2.3,opacity:.83,interactive:false}).addTo(heatGroup));
 const allBounds=L.latLngBounds(bounds);map.fitBounds(allBounds,{padding:[35,35]});
 function tab(name){document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('active',s.id===name+'Screen'));document.querySelectorAll('.navbtn').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));if(name==='map')setTimeout(()=>map.invalidateSize(),70)}
 document.querySelectorAll('.navbtn').forEach(b=>b.onclick=()=>tab(b.dataset.tab));
