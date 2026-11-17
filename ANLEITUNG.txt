@@ -1,0 +1,12 @@
+OVERPASS HTTP 429 – BUILD-FIX
+
+Die zwei Dateien im GitHub-Hauptverzeichnis ersetzen:
+- precompute_surfaces.cjs
+- template.html
+
+Die anderen Dateien (build.py, deploy.yml, gpx/) NICHT ändern.
+Danach Commit changes. GitHub Actions sollte ohne Overpass-Abfragen durchlaufen.
+Bereits gecachte echte OSM-Wegarten werden benutzt. Wo keine echten Daten vorliegen,
+erscheint ausdrücklich „Unbekannt“ statt falscher Trail-/Asphalt-Angaben.
+Damit sind die echten Wegarten noch NICHT gelöst. Dafür ist später eine andere
+Datenquelle oder eine kontrollierte Offline-Vorberechnung notwendig.
