@@ -1,0 +1,145 @@
+<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Meine Wanderkarte – Satellit, Heatmap & Höhenprofile</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+:root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#e7eef3;background:#0c1720}*{box-sizing:border-box}
+body{margin:0}#map{position:absolute;inset:0 0 0 360px;background:#20313c}
+aside{position:absolute;inset:0 auto 0 0;width:360px;overflow:auto;background:#101c27;z-index:900;padding:18px;box-shadow:3px 0 16px #0007}
+h1{font-size:21px;margin:0 0 4px}h2{font-size:14px;margin:18px 0 9px;color:#b8cedc}p,.muted{color:#a9becb;font-size:12px;line-height:1.5}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}.stat{background:#1b2b39;border:1px solid #2c4353;padding:11px;border-radius:10px}.stat strong{display:block;font-size:22px}.stat span{font-size:11px;color:#a9becb}
+button,select{background:#22394a;border:1px solid #426075;border-radius:8px;color:#f1f6fa;padding:9px;cursor:pointer}button:hover{background:#315169}
+.toolbar{display:flex;flex-wrap:wrap;gap:6px}.toolbar button{font-size:12px}
+.route{display:flex;align-items:center;gap:7px;padding:8px 5px;border-bottom:1px solid #293b49;font-size:12px}
+.route button{flex:1;text-align:left;background:transparent;border:0;padding:2px}.route small{display:block;color:#a9becb;margin-top:2px}
+.dot{width:11px;height:11px;border-radius:50%;flex-shrink:0}
+input[type=checkbox]{accent-color:#ffbf5a}
+#routes{max-height:340px;overflow:auto}
+#profile{height:180px;position:relative}#profile canvas{width:100%!important;height:100%!important}
+#profileNote{min-height:25px}.legend{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;color:#d1dce5}
+.swatch{width:24px;height:5px;border-radius:4px;display:inline-block}
+#status{font-size:11px;color:#a9becb;margin-top:10px}
+@media(max-width:700px){aside{width:100%;height:43%;inset:auto 0 0;box-shadow:0 -3px 18px #0008;padding:12px}#map{inset:0 0 43% 0}h1{font-size:17px}.stats{grid-template-columns:repeat(4,1fr)}.stat{padding:7px}.stat strong{font-size:15px}.stat span{font-size:9px}#routes{max-height:170px}}
+</style></head><body><div id="map"></div><aside>
+<h1>🥾 Meine Wanderkarte</h1><p>Deine GPX-Routen · Satellit, Relief, echte Weg-Überlappung und Höhenprofile</p>
+<div class="stats"><div class="stat"><strong id="nTours">–</strong><span>Touren</span></div>
+<div class="stat"><strong id="nKm">–</strong><span>GPX-Kilometer</span></div>
+<div class="stat"><strong id="nGain">–</strong><span>Aufstieg (ca.)</span></div>
+<div class="stat"><strong id="nLongest">–</strong><span>Längste Tour (km)</span></div></div>
+<h2>Kartenansicht</h2><div class="toolbar">
+<button id="sat">🛰 Satellit</button><button id="relief">⛰ Relief</button><button id="street">Straße</button><button id="shade">Schummerung: an</button>
+</div><h2>Darstellung</h2><div class="toolbar">
+<button id="tracks">Einzelrouten: an</button><button id="heat">Heatmap: aus</button><button id="all">Alle anzeigen</button><button id="none">Alle aus</button>
+</div><p>Die Heatmap zählt <b>unterschiedliche GPX-Touren</b> in ungefähr 90-m-Rastern, nicht die Anzahl aufgezeichneter GPS-Punkte.</p>
+<div class="legend"><span class="swatch" style="background:#f9e76c"></span>1 Tour <span class="swatch" style="background:#ff982f"></span>2 Touren <span class="swatch" style="background:#f04343"></span>3+ Touren</div>
+<h2>Rekorde</h2><div id="records" class="muted"></div>
+<h2>Touren auswählen <span id="selectedName" class="muted"></span></h2><div id="routes"></div>
+<h2>Touren-Steckbrief</h2><div id="tourDetails" class="stat" style="font-size:12px;line-height:1.7"></div><h2>Interaktives Höhenprofil</h2><div id="profile"><canvas id="chart"></canvas></div><div id="profileNote" class="muted">Wähle eine Tour aus.</div>
+<div id="status">Satelliten- und Reliefkacheln benötigen Internet. Die Karte zeigt echte Reliefschummerung, kein frei drehbares 3D-Geländemodell.</div>
+</aside>
+<script>
+const DATA=__ROUTE_DATA__;
+const routes=DATA.routes;
+const colors=['#ff6161','#43d8ff','#f6db56','#d998ff','#ffab4d','#5ee4a1','#f38cc6','#a6a0ff'];
+const map=L.map('map',{preferCanvas:true,zoomControl:true}).setView([51.2,8.5],9);
+const satellite=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles © Esri',maxZoom:19});
+const relief=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{attribution:'© OpenTopoMap, © OpenStreetMap contributors, SRTM',maxZoom:17});
+const street=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors',maxZoom:19});
+const shade=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}',{attribution:'Hillshade © Esri',opacity:.27,maxZoom:19});
+satellite.addTo(map);shade.addTo(map);
+let base=satellite,shadeOn=true,tracksOn=true,heatOn=false;
+function setBase(layer){map.removeLayer(base);base=layer;base.addTo(map);if(shadeOn)shade.bringToFront();tracksLayer.bringToFront();if(heatOn)heatLayer.bringToFront()}
+document.getElementById('sat').onclick=()=>setBase(satellite);
+document.getElementById('relief').onclick=()=>setBase(relief);
+document.getElementById('street').onclick=()=>setBase(street);
+document.getElementById('shade').onclick=()=>{shadeOn=!shadeOn;if(shadeOn)shade.addTo(map);else map.removeLayer(shade);document.getElementById('shade').textContent='Schummerung: '+(shadeOn?'an':'aus');if(heatOn)heatLayer.bringToFront();else tracksLayer.bringToFront()};
+const tracksLayer=L.layerGroup().addTo(map),heatLayer=L.layerGroup();
+const layers=[];let allBounds=[];
+routes.forEach((r,i)=>{
+ let g=L.layerGroup();
+ r.segments.forEach(seg=>{
+  let latlng=seg.map(p=>[p[0],p[1]]);
+  allBounds.push(...latlng);
+  L.polyline(latlng,{color:'#08141a',weight:5,opacity:.75,interactive:false}).addTo(g);
+  L.polyline(latlng,{color:colors[i%colors.length],weight:2.8,opacity:.95,tooltip:r.name}).on('click',()=>selectRoute(i)).bindTooltip(r.name).addTo(g);
+ });
+ g.addTo(tracksLayer);layers.push(g);
+});
+DATA.heatlines.forEach(([count,points])=>{
+ L.polyline(points,{color:count>=3?'#f04343':count===2?'#ff982f':'#f9e76c',weight:count>=3?7:5,opacity:.92,interactive:false,lineCap:'round'}).addTo(heatLayer);
+});
+map.fitBounds(allBounds,{padding:[20,20]});
+function redraw(){if(tracksOn){if(!map.hasLayer(tracksLayer))tracksLayer.addTo(map)}else map.removeLayer(tracksLayer);
+ if(heatOn){if(!map.hasLayer(heatLayer))heatLayer.addTo(map)}else map.removeLayer(heatLayer);
+ document.getElementById('tracks').textContent='Einzelrouten: '+(tracksOn?'an':'aus');
+ document.getElementById('heat').textContent='Heatmap: '+(heatOn?'an':'aus')}
+document.getElementById('tracks').onclick=()=>{tracksOn=!tracksOn;redraw()};
+document.getElementById('heat').onclick=()=>{heatOn=!heatOn;redraw()};
+function toggleAll(on){routes.forEach((r,i)=>{if(on)layers[i].addTo(tracksLayer);else tracksLayer.removeLayer(layers[i]);document.getElementById('c'+i).checked=on})}
+document.getElementById('all').onclick=()=>toggleAll(true);
+document.getElementById('none').onclick=()=>toggleAll(false);
+const fmt=(v,d=1)=>Number(v).toLocaleString('de-DE',{minimumFractionDigits:d,maximumFractionDigits:d});
+document.getElementById('nTours').textContent=routes.length;
+document.getElementById('nKm').textContent=fmt(routes.reduce((s,r)=>s+r.km,0))+' km';
+const valid=routes.filter(r=>r.hasElevation);
+document.getElementById('nGain').textContent=fmt(valid.reduce((s,r)=>s+r.gain,0),0)+' m';
+const longest=routes.reduce((a,b)=>a.km>b.km?a:b);
+document.getElementById('nLongest').textContent=fmt(longest.km);
+const maxGain=valid.reduce((a,b)=>a.gain>b.gain?a:b);
+document.getElementById('records').innerHTML='<b>Längste Tour:</b> '+longest.name+' ('+fmt(longest.km)+' km)<br><b>Meiste Höhenmeter:</b> '+maxGain.name+' (ca. '+fmt(maxGain.gain,0)+' m)<br><b>Durchschnitt:</b> '+fmt(routes.reduce((s,r)=>s+r.km,0)/routes.length)+' km pro GPX';
+const list=document.getElementById('routes');
+routes.forEach((r,i)=>{
+ let row=document.createElement('div');row.className='route';
+ let check=document.createElement('input');check.type='checkbox';check.checked=true;check.id='c'+i;check.onchange=()=>{if(check.checked)layers[i].addTo(tracksLayer);else tracksLayer.removeLayer(layers[i])};
+ let dot=document.createElement('span');dot.className='dot';dot.style.background=colors[i%colors.length];
+ let b=document.createElement('button');b.innerHTML=(i+1)+'. '+r.name+'<small>'+fmt(r.km)+' km · ↑ '+(r.hasElevation?'ca. '+fmt(r.gain,0)+' m':'keine Höhendaten')+'</small>';
+ b.onclick=()=>selectRoute(i);
+ row.append(check,dot,b);list.appendChild(row);
+});
+let chart=null,marker=null;
+function selectRoute(i){
+ const r=routes[i],points=r.segments.flat();
+ const elev=points.map(p=>p[2]).filter(v=>v!==null);
+ const start=points[0],end=points[points.length-1];
+ let descent=0, climbed=0;
+ for(const seg of r.segments){const values=seg.map(p=>p[2]);for(let j=1;j<values.length;j++){if(values[j]===null||values[j-1]===null)continue;const d=values[j]-values[j-1];if(d<0)descent-=d;else climbed+=d;}}
+ const low=elev.length?Math.min(...elev):null,high=elev.length?Math.max(...elev):null;
+ const walkHours=r.km/4.2+(r.gain||0)/550;
+ const difficulty=r.km>=25||(r.gain||0)>=850?'Anspruchsvoll':r.km>=15||(r.gain||0)>=450?'Mittel bis anspruchsvoll':'Leicht bis mittel';
+ const formatCoord=p=>p[0].toFixed(5)+', '+p[1].toFixed(5);
+ document.getElementById('tourDetails').innerHTML=`<b>${escapeHtml(r.name)}</b><br>📏 Strecke: ${fmt(r.km)} km<br>↗ Aufstieg: ${r.hasElevation?'ca. '+fmt(r.gain,0)+' m':'nicht vorhanden'}<br>↘ Abstieg: ${elev.length?'aus Rohdaten ca. '+fmt(descent,0)+' m':'nicht vorhanden'}<br>⛰ Höchster / tiefster Punkt: ${high===null?'unbekannt':fmt(high,0)+' / '+fmt(low,0)+' m'}<br>⏱ Geschätzte Gehzeit: ${fmt(walkHours,1)} Std. (ohne Pausen)<br>🥾 Grobe Einstufung: ${difficulty}<br>📍 Start: ${formatCoord(start)}<br>🏁 Ziel: ${formatCoord(end)}<br><button id="downloadRoute" style="margin-top:9px">GPX dieser Tour herunterladen</button><br><small style="color:#a9becb">Gehzeit und Schwierigkeit sind Schätzungen; Höhenmeter aus GPX können Messrauschen enthalten. Ortsnamen und Sehenswürdigkeiten sind nicht in allen Dateien hinterlegt.</small>`;
+ document.getElementById('downloadRoute').onclick=()=>downloadGPX(r);
+ const latlng=r.segments.flat().map(p=>[p[0],p[1]]);
+ map.fitBounds(L.latLngBounds(latlng),{padding:[25,25]});
+ document.getElementById('selectedName').textContent='· '+(i+1)+' / '+routes.length;
+ const xs=[],ys=[],positions=[];
+ let dist=0,last=null;
+ for(const seg of r.segments){
+  last=null;
+  for(const p of seg){
+   if(last)dist+=kmDistance(last,p);
+   if(p[2]!==null){xs.push(+dist.toFixed(3));ys.push(p[2]);positions.push([p[0],p[1]])}
+   last=p;
+  }
+ }
+ if(chart){chart.destroy();chart=null}
+ if(marker){map.removeLayer(marker);marker=null}
+ if(xs.length<2){document.getElementById('profileNote').textContent='Diese GPX-Datei enthält kein nutzbares Höhenprofil.';return}
+ const stride=Math.max(1,Math.floor(xs.length/650));
+ const sampled=xs.map((x,j)=>({x,y:ys[j],pos:positions[j]})).filter((p,j)=>j%stride===0||j===xs.length-1);
+ const ctx=document.getElementById('chart');
+ chart=new Chart(ctx,{type:'line',data:{datasets:[{data:sampled,borderColor:'#60d9be',backgroundColor:'rgba(96,217,190,.12)',fill:true,borderWidth:2,pointRadius:0,tension:.12}]},
+ options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:false,plugins:{legend:{display:false},tooltip:{callbacks:{title:items=>fmt(items[0].parsed.x)+' km',label:item=>Math.round(item.parsed.y)+' m'}}},scales:{x:{type:'linear',title:{display:true,text:'km',color:'#b8cedc'},ticks:{color:'#b8cedc'},grid:{color:'#294251'}},y:{title:{display:true,text:'Höhe (m)',color:'#b8cedc'},ticks:{color:'#b8cedc'},grid:{color:'#294251'}}},
+ onHover:(event,elements)=>{if(!elements.length)return;const p=sampled[elements[0].index];if(marker)map.removeLayer(marker);marker=L.circleMarker(p.pos,{radius:7,color:'#fff',fillColor:'#f55',fillOpacity:1,weight:2}).addTo(map)}
+ }});
+ document.getElementById('profileNote').textContent='Höhenprofil aus GPX-Höhenwerten. Mit der Maus über die Linie fahren, um die Position auf der Karte zu sehen.';
+}
+function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function downloadGPX(r){
+ const xml='<?xml version="1.0" encoding="UTF-8"?><gpx version="1.1" creator="Meine Wanderkarte" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>'+escapeHtml(r.name)+'</name>'+r.segments.map(seg=>'<trkseg>'+seg.map(p=>'<trkpt lat="'+p[0]+'" lon="'+p[1]+'">'+(p[2]!==null?'<ele>'+p[2]+'</ele>':'')+'</trkpt>').join('')+'</trkseg>').join('')+'</trk></gpx>';
+ const blob=new Blob([xml],{type:'application/gpx+xml'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=r.name.replace(/[^a-z0-9äöüß -]/gi,'_').slice(0,90)+'.gpx';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function kmDistance(a,b){const R=6371,toRad=Math.PI/180;let p1=a[0]*toRad,p2=b[0]*toRad,dP=(b[0]-a[0])*toRad,dL=(b[1]-a[1])*toRad;let q=Math.sin(dP/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dL/2)**2;return 2*R*Math.asin(Math.sqrt(q))}
+selectRoute(0);
+</script></body></html>
